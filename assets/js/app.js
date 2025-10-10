@@ -28,6 +28,8 @@ function appendLog(line){
 let currentJob = null;
 let pollTimer  = null;
 let cooldownTimer = null;
+let processEndpoint = "process.php";
+let statusEndpoint = "status.php";
 
 function startCooldown(seconds){
   $("#startBtn").disabled = true;
@@ -49,10 +51,12 @@ async function startJob(){
   const form = document.querySelector("#jobForm");
   if (!form) { console.log("[log] #jobForm tidak ada"); return; }
   const data = new FormData(form);
+  processEndpoint = form.dataset.processUrl || "process.php";
+  statusEndpoint = form.dataset.statusUrl || "status.php";
   let j = {};
   let resp;
   try {
-    resp = await fetch("process.php", { method: "POST", body: data });
+    resp = await fetch(processEndpoint, { method: "POST", body: data });
     try { j = await resp.json(); } catch(_) {}
   } catch (e) {
     appendLog("Gagal memulai proses: " + e.message);
@@ -74,7 +78,14 @@ async function pollStatus(){
   let j = {};
   let resp;
   try {
-    resp = await fetch(`status.php?job_id=${encodeURIComponent(currentJob)}`);
+    let statusUrl;
+    try {
+      statusUrl = new URL(statusEndpoint, window.location.href);
+    } catch (_) {
+      statusUrl = new URL("status.php", window.location.href);
+    }
+    statusUrl.searchParams.set("job_id", currentJob);
+    resp = await fetch(statusUrl.toString());
     try { j = await resp.json(); } catch(_) {}
   } catch (e) {
     appendLog("Gagal mengambil status: " + e.message);
