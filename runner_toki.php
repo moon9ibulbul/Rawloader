@@ -26,7 +26,7 @@ $custom_width = (int)($payload['custom_width'] ?? 720);
 $senstivity   = (int)($payload['senstivity'] ?? 90);
 $ignorable_px = (int)($payload['ignorable_pixels'] ?? 0);
 $scan_step    = (int)($payload['scan_line_step'] ?? 5);
-$low_ram      = (int)($payload['low_ram'] ?? 0) === 1 ? 1 : 0;
+$low_ram      = (int)($payload['low_ram'] ?? 1) === 1 ? 1 : 0;
 
 // ====== Stage 1: scrape & download ======
 $raw_dir = $out_dir . "/raw"; if(!is_dir($raw_dir)) mkdir($raw_dir,0775,true);
