@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+from html import unescape
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -24,17 +25,47 @@ def fetch_html(url: str) -> str:
 def extract_images(html: str):
     pattern = re.compile(r"const\s+imgHttps\s*=\s*(\[[^;]*\])", re.IGNORECASE | re.DOTALL)
     match = pattern.search(html)
-    if not match:
-        raise ValueError("Tidak menemukan konstanta imgHttps pada halaman")
-    array_text = match.group(1)
-    try:
-        data = json.loads(array_text)
-    except json.JSONDecodeError:
-        normalized = array_text.replace("'", '"')
-        data = json.loads(normalized)
-    if not isinstance(data, list):
-        raise ValueError("imgHttps bukan list")
-    return [str(item) for item in data if isinstance(item, str) and item.strip()]
+if match:
+        array_text = match.group(1)
+        try:
+            data = json.loads(array_text)
+        except json.JSONDecodeError:
+            normalized = array_text.replace("'", '"')
+            data = json.loads(normalized)
+        if not isinstance(data, list):
+            raise ValueError("imgHttps bukan list")
+        return [str(item) for item in data if isinstance(item, str) and item.strip()]
+
+    astro_images = extract_images_from_astro(html)
+    if astro_images:
+        return astro_images
+    raise ValueError("Tidak menemukan konstanta imgHttps maupun data astro-island")
+
+
+def extract_images_from_astro(html: str):
+    pattern = re.compile(r"<astro-island[^>]+props=\"([^\"]+)\"", re.IGNORECASE)
+    urls = []
+    for match in pattern.finditer(html):
+        props_raw = match.group(1)
+        props_text = unescape(props_raw)
+        try:
+            props = json.loads(props_text)
+        except json.JSONDecodeError:
+            continue
+        image_files = props.get("imageFiles")
+        if not image_files or len(image_files) < 2:
+            continue
+        encoded = image_files[1]
+        if not isinstance(encoded, str):
+            continue
+        try:
+            decoded = json.loads(encoded)
+        except json.JSONDecodeError:
+            continue
+        for item in decoded:
+            if isinstance(item, list) and len(item) >= 2 and isinstance(item[1], str) and item[1].strip():
+                urls.append(item[1])
+    return urls
 
 
 def sanitize_ext(url: str) -> str:
