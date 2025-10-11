@@ -25,7 +25,7 @@ def fetch_html(url: str) -> str:
 def extract_images(html: str):
     pattern = re.compile(r"const\s+imgHttps\s*=\s*(\[[^;]*\])", re.IGNORECASE | re.DOTALL)
     match = pattern.search(html)
-if match:
+    if match:
         array_text = match.group(1)
         try:
             data = json.loads(array_text)
@@ -66,7 +66,6 @@ def extract_images_from_astro(html: str):
             if isinstance(item, list) and len(item) >= 2 and isinstance(item[1], str) and item[1].strip():
                 urls.append(item[1])
     return urls
-
 
 def sanitize_ext(url: str) -> str:
     path = urlparse(url).path
