@@ -86,6 +86,24 @@ def download_image(url: str, dest: Path, idx: int):
     return target
 
 
+def normalize_bato_url(url: str) -> str:
+    """Konversi domain alternatif Bato ke domain utama bato.to."""
+
+    parsed = urlparse(url)
+    domain = parsed.netloc.split(":", 1)[0].lower()
+    if domain.startswith("www."):
+        domain = domain[4:]
+
+    if domain.startswith("bato.si") or domain.startswith("bato.ing"):
+        match = re.search(r"/(\d+)(?:-[^/]*)?/?$", parsed.path)
+        if not match:
+            raise ValueError("Tidak dapat menemukan chapter id dari URL yang diberikan")
+        chapter_id = match.group(1)
+        return f"https://bato.to/chapter/{chapter_id}"
+
+    return url
+
+
 def main():
     parser = argparse.ArgumentParser(description="Downloader gambar Bato berbasis imgHttps")
     parser.add_argument("url", help="URL halaman Bato")
@@ -95,10 +113,19 @@ def main():
 
     out_dir = Path(args.output)
     out_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        normalized_url = normalize_bato_url(args.url)
+    except ValueError as exc:
+        print(f"[bato] ERROR pada URL: {exc}")
+        return 1
 
+    if normalized_url != args.url:
+        print(f"[bato] Menggunakan URL chapter: {normalized_url}")
+        
     print("[bato] Mengunduh halaman sumber...")
     try:
-        html = fetch_html(args.url)
+        html = fetch_html(normalized_url)
     except Exception as exc:
         print(f"[bato] ERROR saat mengambil halaman: {exc}")
         return 2
