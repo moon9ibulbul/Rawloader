@@ -36,6 +36,11 @@ require_once __DIR__ . '/config.php';
         <p>Masukkan URL penuh laman chapter batoto, otomatis scrape semua gambar.</p>
         <a class="btn" href="bato.php">Buka</a>
       </div>
+      <div class="card">
+        <h2>MangaGo</h2>
+        <p>Masukkan URL chapter MangaGo, otomatis unduh dan stitch gambarnya.</p>
+        <a class="btn" href="mangago.php">Buka</a>
+      </div>
     </div>
   </div>
 </body>
