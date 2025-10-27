@@ -22,8 +22,15 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable, List, Optional
+from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import (
+    HTTPCookieProcessor,
+    ProxyHandler,
+    Request,
+    build_opener,
+)
+from http.cookiejar import CookieJar
 
 try:
     from PIL import Image  # type: ignore
@@ -34,6 +41,22 @@ USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
+
+DEFAULT_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "identity",
+    "Connection": "keep-alive",
+    "DNT": "1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+SESSION_SEED_URL = "https://www.mangago.me/"
+
+_COOKIE_JAR = CookieJar()
+_OPENER = build_opener(ProxyHandler({}), HTTPCookieProcessor(_COOKIE_JAR))
+_SESSION_WARMED = False
 
 
 @dataclass
@@ -50,13 +73,46 @@ class DownloadError(RuntimeError):
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
-def http_get(url: str, *, referer: Optional[str] = None) -> bytes:
-    headers = {"User-Agent": USER_AGENT}
+def warm_session() -> None:
+    global _SESSION_WARMED
+    if _SESSION_WARMED:
+        return
+    try:
+        seed_req = Request(SESSION_SEED_URL, headers=DEFAULT_HEADERS)
+        with _OPENER.open(seed_req, timeout=30) as resp:  # nosec - controlled destination
+            # Read a small chunk to make sure the request completes and
+            # cookies (if any) are stored inside the shared cookie jar.
+            resp.read(1024)
+    except Exception:
+        # Seed fetch is best effort. Proceed even if it fails so the actual
+        # request can surface the real error message to the user.
+        return
+    _SESSION_WARMED = True
+
+
+def http_get(url: str, *, referer: Optional[str] = None, _retry: bool = False) -> bytes:
+    warm_session()
+    headers = dict(DEFAULT_HEADERS)
     if referer:
         headers["Referer"] = referer
+    elif "mangago" in url:
+        headers["Referer"] = SESSION_SEED_URL
     req = Request(url, headers=headers)
-    with urlopen(req) as resp:  # nosec - controlled destination
-        data = resp.read()
+    try:
+        with _OPENER.open(req, timeout=60) as resp:  # nosec - controlled destination
+            data = resp.read()
+    except HTTPError as exc:  # pragma: no cover - network failure
+        if exc.code == 403 and not _retry:
+            # MangaGo occasionally requires a fresh session cookie. Retry once
+            # after warming the session again to avoid failing user jobs.
+            global _SESSION_WARMED
+            _SESSION_WARMED = False
+            warm_session()
+            time.sleep(0.5)
+            return http_get(url, referer=referer, _retry=True)
+        raise DownloadError(f"HTTP {exc.code} saat mengakses {url}") from exc
+    except URLError as exc:  # pragma: no cover - network failure
+        raise DownloadError(f"Koneksi gagal ke {url}: {exc.reason}") from exc
     return data
 
 
