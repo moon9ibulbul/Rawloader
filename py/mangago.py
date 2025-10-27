@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import json
 import os
 import re
 import subprocess
 import sys
 import time
+import zlib
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -42,14 +44,20 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+DEFAULT_DOCUMENT_ACCEPT = (
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+)
+
 DEFAULT_HEADERS = {
     "User-Agent": USER_AGENT,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "identity",
+    "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
     "DNT": "1",
     "Upgrade-Insecure-Requests": "1",
+    "Sec-CH-UA": '"Chromium";v="120", "Not A(Brand";v="24", "Google Chrome";v="120"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": '"Linux"',
 }
 
 SESSION_SEED_URL = "https://www.mangago.me/"
@@ -57,6 +65,57 @@ SESSION_SEED_URL = "https://www.mangago.me/"
 _COOKIE_JAR = CookieJar()
 _OPENER = build_opener(ProxyHandler({}), HTTPCookieProcessor(_COOKIE_JAR))
 _SESSION_WARMED = False
+
+
+def _normalize_host(host: str) -> str:
+    host = host.lower()
+    if ":" in host:
+        host = host.split(":", 1)[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _determine_fetch_site(url: str, referer: Optional[str]) -> str:
+    if not referer:
+        return "none"
+    url_host = _normalize_host(urlparse(url).netloc)
+    ref_host = _normalize_host(urlparse(referer).netloc)
+    if not url_host or not ref_host:
+        return "none"
+    return "same-origin" if url_host == ref_host else "cross-site"
+
+
+def _build_request_headers(url: str, referer: Optional[str], resource: str) -> dict[str, str]:
+    headers = dict(DEFAULT_HEADERS)
+    effective_referer: Optional[str] = referer
+    if not effective_referer and "mangago" in url:
+        effective_referer = SESSION_SEED_URL
+    fetch_site = _determine_fetch_site(url, effective_referer)
+
+    if resource == "document":
+        headers["Accept"] = DEFAULT_DOCUMENT_ACCEPT
+        headers["Sec-Fetch-Dest"] = "document"
+        headers["Sec-Fetch-Mode"] = "navigate"
+        headers["Sec-Fetch-Site"] = fetch_site
+        headers["Sec-Fetch-User"] = "?1"
+    elif resource == "script":
+        headers["Accept"] = "*/*"
+        headers["Sec-Fetch-Dest"] = "script"
+        headers["Sec-Fetch-Mode"] = "no-cors"
+        headers["Sec-Fetch-Site"] = fetch_site if effective_referer else "same-origin"
+    elif resource == "image":
+        headers["Accept"] = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        headers["Sec-Fetch-Dest"] = "image"
+        headers["Sec-Fetch-Mode"] = "no-cors"
+        headers["Sec-Fetch-Site"] = fetch_site if effective_referer else "cross-site"
+    else:
+        headers["Sec-Fetch-Site"] = fetch_site
+
+    if effective_referer:
+        headers["Referer"] = effective_referer
+
+    return headers
 
 
 @dataclass
@@ -78,7 +137,8 @@ def warm_session() -> None:
     if _SESSION_WARMED:
         return
     try:
-        seed_req = Request(SESSION_SEED_URL, headers=DEFAULT_HEADERS)
+        headers = _build_request_headers(SESSION_SEED_URL, None, "document")
+        seed_req = Request(SESSION_SEED_URL, headers=headers)
         with _OPENER.open(seed_req, timeout=30) as resp:  # nosec - controlled destination
             # Read a small chunk to make sure the request completes and
             # cookies (if any) are stored inside the shared cookie jar.
@@ -90,17 +150,38 @@ def warm_session() -> None:
     _SESSION_WARMED = True
 
 
-def http_get(url: str, *, referer: Optional[str] = None, _retry: bool = False) -> bytes:
+def _decompress_payload(data: bytes, encoding: str) -> bytes:
+    encoding = encoding.lower()
+    if encoding == "gzip":
+        return gzip.decompress(data)
+    if encoding == "deflate":
+        try:
+            return zlib.decompress(data)
+        except zlib.error:
+            return zlib.decompress(data, -zlib.MAX_WBITS)
+    return data
+
+
+def http_get(
+    url: str,
+    *,
+    referer: Optional[str] = None,
+    resource: str = "document",
+    _retry: bool = False,
+) -> bytes:
     warm_session()
-    headers = dict(DEFAULT_HEADERS)
-    if referer:
-        headers["Referer"] = referer
-    elif "mangago" in url:
-        headers["Referer"] = SESSION_SEED_URL
+    headers = _build_request_headers(url, referer, resource)
     req = Request(url, headers=headers)
     try:
         with _OPENER.open(req, timeout=60) as resp:  # nosec - controlled destination
             data = resp.read()
+            encoding = resp.headers.get("Content-Encoding", "")
+            if encoding:
+                try:
+                    data = _decompress_payload(data, encoding)
+                except Exception:
+                    # Fallback to the raw payload if we cannot decode the body.
+                    pass
     except HTTPError as exc:  # pragma: no cover - network failure
         if exc.code == 403 and not _retry:
             # MangaGo occasionally requires a fresh session cookie. Retry once
@@ -109,15 +190,20 @@ def http_get(url: str, *, referer: Optional[str] = None, _retry: bool = False) -
             _SESSION_WARMED = False
             warm_session()
             time.sleep(0.5)
-            return http_get(url, referer=referer, _retry=True)
+            return http_get(url, referer=referer, resource=resource, _retry=True)
         raise DownloadError(f"HTTP {exc.code} saat mengakses {url}") from exc
     except URLError as exc:  # pragma: no cover - network failure
         raise DownloadError(f"Koneksi gagal ke {url}: {exc.reason}") from exc
     return data
 
 
-def fetch_text(url: str, *, referer: Optional[str] = None) -> str:
-    data = http_get(url, referer=referer)
+def fetch_text(
+    url: str,
+    *,
+    referer: Optional[str] = None,
+    resource: str = "document",
+) -> str:
+    data = http_get(url, referer=referer, resource=resource)
     # MangaGo pages are UTF-8. Fallback to replace errors just in case.
     return data.decode("utf-8", errors="replace")
 
@@ -286,7 +372,7 @@ def extract_image_manifest(html: str, chapter_url: str) -> tuple[List[str], int,
     if not script_match:
         raise DownloadError("Tidak menemukan chapter.js")
     chapter_js_url = urljoin(chapter_url, script_match.group(1))
-    chapter_js = fetch_text(chapter_js_url, referer=chapter_url)
+    chapter_js = fetch_text(chapter_js_url, referer=chapter_url, resource="script")
 
     deobf_js = sojson_v4_deobfuscate(chapter_js)
     key_match = re.search(r"var\\s+key\\s*=\\s*CryptoJS\\.enc\\.Hex\\.parse\\(\"([0-9a-fA-F]+)\"\)", deobf_js)
@@ -319,7 +405,7 @@ def download_and_process_image(idx: int, url: str, ctx: ChapterContext) -> bytes
     fragment = ''
     if '#desckey=' in url:
         url, fragment = url.split('#', 1)
-    data = http_get(url, referer=ctx.referer)
+    data = http_get(url, referer=ctx.referer, resource="image")
     if fragment:
         match = re.search(r"desckey=([^&]+)", fragment)
         key = match.group(1) if match else None
@@ -345,7 +431,7 @@ def save_image(data: bytes, dest_dir: Path, idx: int, source_url: str) -> Path:
 def process_chapter(chapter_url: str, output_dir: Path) -> None:
     ctx = ChapterContext(chapter_url=chapter_url, referer=chapter_url)
     print(f"[mangago] Mengunduh halaman chapter: {chapter_url}")
-    html = fetch_text(chapter_url, referer=chapter_url)
+    html = fetch_text(chapter_url, referer=chapter_url, resource="document")
     print("[mangago] Mengekstrak manifest gambar...")
     image_urls, cols, deobf_js = extract_image_manifest(html, chapter_url)
     if not image_urls:
