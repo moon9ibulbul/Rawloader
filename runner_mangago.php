@@ -42,6 +42,9 @@ $ignorable_px   = intval($payload['ignorable_pixels'] ?? 0);
 $scan_step      = intval($payload['scan_line_step'] ?? 5);
 $low_ram        = intval($payload['low_ram'] ?? 0) === 1 ? 1 : 0;
 $unit_images    = intval($payload['unit_images'] ?? 20);
+$package_content = $payload['package_content'] ?? 'stitched';
+$valid_packages  = ['stitched','raw','both'];
+if (!in_array($package_content, $valid_packages, true)) $package_content = 'stitched';
 
 $raw_dir = $out_dir . "/raw";
 if (!is_dir($raw_dir)) { mkdir($raw_dir, 0775, true); }
@@ -117,44 +120,60 @@ if (!$input_for_stitch) {
 
 logln('[runner-mangago] Stitch input: ' . $input_for_stitch);
 
-$cmd2 = escapeshellcmd(PYTHON_BIN) . ' -u ' . escapeshellarg(SCRIPTS_DIR . '/main.py') . ' '
-      . ' --input_folder ' . escapeshellarg($input_for_stitch)
-      . ' --split_height ' . escapeshellarg($split_height)
-      . ' --output_files_type ' . escapeshellarg($output_type)
-      . ($low_ram ? ' --low_ram ' : '')
-      . ' --unit_images ' . escapeshellarg($unit_images)
-      . ' --width_enforce_type ' . escapeshellarg($width_enforce)
-      . ' --custom_width ' . escapeshellarg($custom_width)
-      . ' --senstivity ' . escapeshellarg($senstivity)
-      . ' --ignorable_pixels ' . escapeshellarg($ignorable_px)
-      . ' --scan_line_step ' . escapeshellarg($scan_step);
-$cmd2 .= ' --cleanup-input';
+$cleanup_input = ($package_content === 'stitched');
 
-update_meta(['stage'=>'stitch','progress'=>65]);
-logln('[runner-mangago] Menjalankan stitcher...');
-logln($cmd2);
-
-$rc2 = 0;
-$proc2 = popen($cmd2 . " 2>&1", 'r');
-if ($proc2) {
-  while (!feof($proc2)) {
-    $line = fgets($proc2);
-    if ($line === false) break;
-    logln(rtrim($line));
-    $cur = intval((json_decode(@file_get_contents($meta_path), true)['progress'] ?? 65));
-    if ($cur < 95) update_meta(['progress'=>$cur+1]);
+if ($package_content !== 'raw') {
+  $cmd2 = escapeshellcmd(PYTHON_BIN) . ' -u ' . escapeshellarg(SCRIPTS_DIR . '/main.py') . ' '
+        . ' --input_folder ' . escapeshellarg($input_for_stitch)
+        . ' --split_height ' . escapeshellarg($split_height)
+        . ' --output_files_type ' . escapeshellarg($output_type)
+        . ($low_ram ? ' --low_ram ' : '')
+        . ' --unit_images ' . escapeshellarg($unit_images)
+        . ' --width_enforce_type ' . escapeshellarg($width_enforce)
+        . ' --custom_width ' . escapeshellarg($custom_width)
+        . ' --senstivity ' . escapeshellarg($senstivity)
+        . ' --ignorable_pixels ' . escapeshellarg($ignorable_px)
+        . ' --scan_line_step ' . escapeshellarg($scan_step);
+  if ($cleanup_input) {
+    $cmd2 .= ' --cleanup-input';
   }
-  $rc2 = pclose($proc2);
+
+  update_meta(['stage'=>'stitch','progress'=>65]);
+  logln('[runner-mangago] Menjalankan stitcher...');
+  logln($cmd2);
+
+  $rc2 = 0;
+  $proc2 = popen($cmd2 . " 2>&1", 'r');
+  if ($proc2) {
+    while (!feof($proc2)) {
+      $line = fgets($proc2);
+      if ($line === false) break;
+      logln(rtrim($line));
+      $cur = intval((json_decode(@file_get_contents($meta_path), true)['progress'] ?? 65));
+      if ($cur < 95) update_meta(['progress'=>$cur+1]);
+    }
+    $rc2 = pclose($proc2);
+  } else {
+    logln('[runner-mangago] ERROR: gagal menjalankan stitcher');
+    update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed to start']);
+    exit(1);
+  }
+
+  if ($rc2 !== 0) {
+    logln('[runner-mangago] ERROR: stitcher exit code ' . $rc2);
+    update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed']);
+    exit(1);
+  }
 } else {
-  logln('[runner-mangago] ERROR: gagal menjalankan stitcher');
-  update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed to start']);
-  exit(1);
+  update_meta(['stage'=>'stitch','progress'=>65]);
+  logln('[runner-mangago] Melewati proses stitch (paket unstitched saja).');
 }
 
-if ($rc2 !== 0) {
-  logln('[runner-mangago] ERROR: stitcher exit code ' . $rc2);
-  update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed']);
-  exit(1);
+if ($cleanup_input && is_dir($raw_dir)) {
+  $entries = @scandir($raw_dir);
+  if (is_array($entries) && count($entries) <= 2) {
+    @rmdir($raw_dir);
+  }
 }
 
 update_meta(['stage'=>'zipping','progress'=>96]);

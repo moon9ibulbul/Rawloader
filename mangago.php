@@ -80,6 +80,17 @@
           </div>
         </div>
 
+        <div class="grid">
+          <div class="field">
+            <label>Isi Paket Unduhan</label>
+            <select name="package_content">
+              <option value="stitched" selected>Hanya hasil stitched</option>
+              <option value="raw">Hanya hasil unstitched</option>
+              <option value="both">Stitched + unstitched</option>
+            </select>
+          </div>
+        </div>
+
         <div class="actions">
           <button id="startBtn" class="btn" type="button">Mulai Proses</button>
           <span id="cooldownMsg" class="muted"></span>

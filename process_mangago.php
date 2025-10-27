@@ -59,6 +59,10 @@ try {
   if ($unit_images < 2) $unit_images = 2;
   if ($unit_images > 50) $unit_images = 50;
 
+  $package_content = $_POST['package_content'] ?? 'stitched';
+  $allowed_packages = ['stitched','raw','both'];
+  if (!in_array($package_content, $allowed_packages, true)) $package_content = 'stitched';
+
   $wait_left = 0;
   if (!cooldown_ok($wait_left)) {
     http_response_code(429);
@@ -94,7 +98,8 @@ try {
     'ignorable_pixels'=>$ignorable_pixels,
     'scan_line_step'=>$scan_line_step,
     'low_ram'=>$low_ram,
-    'unit_images'=>$unit_images
+    'unit_images'=>$unit_images,
+    'package_content'=>$package_content
   ];
 
   $envelope = __DIR__ . '/last_payload_' . $job_id . '.json';
