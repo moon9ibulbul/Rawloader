@@ -4,14 +4,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NewToki.biz Downloader</title>
+  <title>XToon Downloader</title>
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>NewToki.biz Downloader</h1>
-      <p class="muted">NewToki biz.nya lagi error!</p>
+      <h1>XToon Downloader</h1>
+      <p class="muted">Download chapter dari https://t1.xtoon2.com (NewToki error, jadi ku ganti ini. Sama aja kok)</p>
     </header>
 
     <section class="card">
@@ -19,7 +19,7 @@
         <div class="grid">
           <div class="field">
             <label>URL Episode</label>
-            <input type="url" name="url" placeholder="e.g. https://newtoki.biz/webtoon/2305/1126873" required>
+            <input type="url" name="url" placeholder="e.g. https://t1.xtoon2.com/chapter/123456" required>
           </div>
           <div class="grid">
           <div class="field">

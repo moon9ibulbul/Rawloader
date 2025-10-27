@@ -195,5 +195,5 @@ if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) 
   $zip->close();
 }
 
-update_meta(['stage'=>'done','progress'=>100, 'zip'=>basename($zip_path)]);
+update_meta(['stage'=>'done','progress'=>100, 'zip'=>basename($zip_path), 'package_type'=>'zip']);
 logln("[runner] Selesai. ZIP: " . basename($zip_path));

@@ -15,6 +15,15 @@ $meta = json_decode(file_get_contents($meta_path), true) ?: [];
 $stage = $meta['stage'] ?? 'unknown';
 $progress = intval($meta['progress'] ?? 0);
 $zip = $meta['zip'] ?? null;
+$package_type = $meta['package_type'] ?? null;
+if (!$package_type) {
+  if (is_string($zip) && str_ends_with(strtolower($zip), '.pdf')) {
+    $package_type = 'pdf';
+  } else {
+    $package_type = 'zip';
+  }
+}
+$download_label = $package_type === 'pdf' ? 'Unduh PDF' : 'Unduh ZIP';
 $expires_at = intval($meta['expires_at'] ?? (time()+AUTO_DELETE_MINUTES*60));
 
 // log delta: serve last ~1000 bytes tail to reduce traffic
@@ -36,6 +45,9 @@ $data = [
   'log_delta'=>$log_delta,
   'done'=> ($stage === 'done'),
   'zip_url'=> ($stage === 'done' && $zip) ? ("download.php?job_id=" . urlencode($job_id)) : null,
+  'package_type'=>$package_type,
+  'download_label'=>$download_label,
+  'package_name'=>$zip,
   'expires_at_local'=>$expires_at_local,
   'eta_note'=>$eta_note
 ];

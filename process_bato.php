@@ -59,6 +59,16 @@ try {
   $unit_images = intval($_POST['unit_images'] ?? 20);
   if ($unit_images < 2) $unit_images = 2;
   if ($unit_images > 50) $unit_images = 50;
+  
+  $package_content = $_POST['package_content'] ?? 'stitched';
+  $allowed_packages = ['stitched','raw','both'];
+  if (!in_array($package_content, $allowed_packages, true)) $package_content = 'stitched';
+
+  $pack_to_pdf = intval($_POST['pack_to_pdf'] ?? 0) === 1 ? 1 : 0;
+
+  $pdf_quality = $_POST['pdf_quality'] ?? 'high';
+  $allowed_quality = ['high','medium','low'];
+  if (!in_array($pdf_quality, $allowed_quality, true)) $pdf_quality = 'high';
 
   $wait_left = 0;
   if (!cooldown_ok($wait_left)) {
@@ -81,7 +91,8 @@ try {
     'expires_at'=>time() + (AUTO_DELETE_MINUTES*60),
     'stage'=>'queued',
     'progress'=>1,
-    'zip'=>null
+    'zip'=>null,
+    'package_type'=>'zip'
   ];
   file_put_contents($meta_path, json_encode($meta, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));
 
@@ -96,7 +107,10 @@ try {
     'scan_line_step'=>$scan_line_step,
     'batch_mode'=>$batch_mode,
     'low_ram'=>$low_ram,
-    'unit_images'=>$unit_images
+    'unit_images'=>$unit_images,
+    'package_content'=>$package_content,
+    'pack_to_pdf'=>$pack_to_pdf,
+    'pdf_quality'=>$pdf_quality
   ];
 
   $envelope = __DIR__ . '/last_payload_' . $job_id . '.json';

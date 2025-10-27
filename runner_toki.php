@@ -11,7 +11,7 @@ function update_meta($arr){ global $meta_path; $cur=json_decode(@file_get_conten
 function logln($s){ global $log_path; file_put_contents($log_path, rtrim($s)."\n", FILE_APPEND); }
 
 update_meta(['stage'=>'starting','progress'=>2]);
-logln("[runner-toki] Job $job_id mulai.");
+logln("[runner-xtoon] Job $job_id mulai.");
 
 // ambil payload
 $envelope = __DIR__ . "/last_payload_{$job_id}.json"; $payload=[];
@@ -33,7 +33,7 @@ $raw_dir = $out_dir . "/raw"; if(!is_dir($raw_dir)) mkdir($raw_dir,0775,true);
 
 $cmd1 = escapeshellcmd(PYTHON_BIN) . ' -u ' . escapeshellarg(SCRIPTS_DIR . '/newtscrape.py') . ' ' . escapeshellarg($url) . ' ' . escapeshellarg($raw_dir);
 update_meta(['stage'=>'download','progress'=>5]);
-logln("[runner-toki] Menjalankan scraper..."); logln($cmd1);
+logln("[runner-xtoon] Menjalankan scraper..."); logln($cmd1);
 
 $rc1 = 0;
 $proc = popen($cmd1 . " 2>&1", "r");
@@ -46,7 +46,7 @@ if ($proc) {
   }
   $rc1 = pclose($proc);
 } else {
-  logln('[runner-toki] ERROR: gagal jalanin scraper');
+  logln('[runner-xtoon] ERROR: gagal jalanin scraper');
   update_meta(['stage'=>'error','progress'=>100,'error'=>'Scraper failed to start']);
   exit(1);
 }
@@ -55,9 +55,9 @@ if ($proc) {
 function dir_has_images($d){ if(!is_dir($d)) return false; foreach(['jpg','jpeg','png','webp','bmp','tiff','tga','JPG','JPEG','PNG','WEBP'] as $e){ if(glob($d.'/*.'. $e)) return true; } return false; }
 function pick_image_dir($base){ if(dir_has_images($base)) return $base; $lvl1=array_filter(glob($base.'/*'),'is_dir'); foreach($lvl1 as $d1){ if(dir_has_images($d1)) return $d1; $lvl2=array_filter(glob($d1.'/*'),'is_dir'); foreach($lvl2 as $d2){ if(dir_has_images($d2)) return $d2; } } return null; }
 $input_for_stitch = pick_image_dir($raw_dir);
-$subs = array_filter(glob($raw_dir.'/*'),'is_dir'); if($subs){ $names=[]; foreach($subs as $sd){ $names[]=basename($sd);} logln('[runner-toki] raw subdirs: '.implode(', ',$names)); }
-if(!$input_for_stitch){ logln('[runner-toki] ERROR: No image files found after scrape'); update_meta(['stage'=>'error','progress'=>100,'error'=>'No images found']); exit(1); }
-logln('[runner-toki] Stitch input: '.$input_for_stitch);
+$subs = array_filter(glob($raw_dir.'/*'),'is_dir'); if($subs){ $names=[]; foreach($subs as $sd){ $names[]=basename($sd);} logln('[runner-xtoon] raw subdirs: '.implode(', ',$names)); }
+if(!$input_for_stitch){ logln('[runner-xtoon] ERROR: No image files found after scrape'); update_meta(['stage'=>'error','progress'=>100,'error'=>'No images found']); exit(1); }
+logln('[runner-xtoon] Stitch input: '.$input_for_stitch);
 
 // ====== Stage 2: stitch ======
 $cmd2 = escapeshellcmd(PYTHON_BIN) . ' -u ' . escapeshellarg(SCRIPTS_DIR . '/main.py') . ' ' .
@@ -74,7 +74,7 @@ $cmd2 = escapeshellcmd(PYTHON_BIN) . ' -u ' . escapeshellarg(SCRIPTS_DIR . '/mai
 $cmd2 .= ' --cleanup-input';
         
 update_meta(['stage'=>'stitch','progress'=>65]);
-logln('[runner-toki] Menjalankan stitcher...'); logln($cmd2);
+logln('[runner-xtoon] Menjalankan stitcher...'); logln($cmd2);
 
 $rc2 = 0;
 $proc2 = popen($cmd2 . " 2>&1", "r");
@@ -87,13 +87,13 @@ if ($proc2) {
   }
   $rc2 = pclose($proc2);
 } else {
-  logln('[runner-toki] ERROR: gagal jalanin stitcher');
+  logln('[runner-xtoon] ERROR: gagal jalanin stitcher');
   update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed to start']);
   exit(1);
 }
 
 if ($rc2 !== 0) {
-  logln('[runner-toki] ERROR: stitcher exit code '.$rc2);
+  logln('[runner-xtoon] ERROR: stitcher exit code '.$rc2);
   update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed']);
   exit(1);
 }
@@ -116,5 +116,5 @@ if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) 
   $zip->close();
 }
 
-update_meta(['stage'=>'done','progress'=>100,'zip'=>basename($zip_path)]);
-logln('[runner-toki] Selesai. ZIP: '.basename($zip_path));
+update_meta(['stage'=>'done','progress'=>100,'zip'=>basename($zip_path),'package_type'=>'zip']);
+logln('[runner-xtoon] Selesai. ZIP: '.basename($zip_path));

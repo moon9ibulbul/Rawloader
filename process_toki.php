@@ -24,7 +24,7 @@ try {
   if (defined('MAX_SPLIT_HEIGHT') && $split_height > MAX_SPLIT_HEIGHT) $split_height = MAX_SPLIT_HEIGHT;
 
   $payload = [
-    'mode' => 'toki',
+    'mode' => 'xtoon',
     'url'  => $url,
     'split_height' => $split_height,
     'output_files_type' => $_POST['output_files_type'] ?? '.png',

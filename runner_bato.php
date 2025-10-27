@@ -43,6 +43,13 @@ $scan_step        = intval($payload['scan_line_step'] ?? 5);
 $batch_mode       = intval($payload['batch_mode'] ?? 0) === 1 ? 1 : 0;
 $low_ram          = intval($payload['low_ram'] ?? 0) === 1 ? 1 : 0;
 $unit_images      = intval($payload['unit_images'] ?? 20);
+$package_content  = $payload['package_content'] ?? 'stitched';
+$valid_packages   = ['stitched','raw','both'];
+if (!in_array($package_content, $valid_packages, true)) $package_content = 'stitched';
+$pack_to_pdf      = intval($payload['pack_to_pdf'] ?? 0) === 1 ? 1 : 0;
+$pdf_quality      = $payload['pdf_quality'] ?? 'high';
+$valid_quality    = ['high','medium','low'];
+if (!in_array($pdf_quality, $valid_quality, true)) $pdf_quality = 'high';
 
 if ($source_url === '') {
   logln('[runner-bato] ERROR: URL kosong.');
@@ -108,6 +115,27 @@ function pick_image_dir($base) {
   return null;
 }
 
+$IMAGE_EXTS = ['jpg','jpeg','png','webp','bmp','tiff','tga','JPG','JPEG','PNG','WEBP','BMP','TIFF','TGA'];
+
+function collect_image_files($dir) {
+  global $IMAGE_EXTS;
+  if (!is_dir($dir)) return [];
+  $files = [];
+  $iterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
+    RecursiveIteratorIterator::LEAVES_ONLY
+  );
+  foreach ($iterator as $file) {
+    if ($file->isDir()) continue;
+    $ext = strtolower(pathinfo($file->getFilename(), PATHINFO_EXTENSION));
+    if (in_array($ext, $IMAGE_EXTS, true)) {
+      $files[] = $file->getPathname();
+    }
+  }
+  sort($files, SORT_NATURAL | SORT_FLAG_CASE);
+  return $files;
+}
+
 $input_for_stitch = pick_image_dir($raw_dir);
 if (!$input_for_stitch) {
   logln('[runner-bato] ERROR: No image files found after scraping.');
@@ -118,71 +146,135 @@ if (!$input_for_stitch) {
 logln('[runner-bato] Stitch input: ' . $input_for_stitch);
 
 $stitched_dir = $out_dir . "/stitched";
-if (!is_dir($stitched_dir)) { mkdir($stitched_dir, 0775, true); }
+$cleanup_input = ($package_content === 'stitched');
 
-$cmd2 = escapeshellcmd(PYTHON_BIN) . ' -u ' . escapeshellarg(SCRIPTS_DIR . '/main.py') . ' '
-       . ' --input_folder ' . escapeshellarg($input_for_stitch)
-       . ' --split_height ' . escapeshellarg($split_height)
-       . ' --output_files_type ' . escapeshellarg($output_type)
-       . ' --unit_images ' . escapeshellarg($unit_images)
-       . ' --width_enforce_type ' . escapeshellarg($width_enforce)
-       . ' --custom_width ' . escapeshellarg($custom_width)
-       . ' --senstivity ' . escapeshellarg($senstivity)
-       . ' --ignorable_pixels ' . escapeshellarg($ignorable_px)
-       . ' --scan_line_step ' . escapeshellarg($scan_step)
-       . ' --cleanup-input';
+if ($package_content !== 'raw') {
+  if (!is_dir($stitched_dir)) { mkdir($stitched_dir, 0775, true); }
 
-if ($batch_mode) { $cmd2 .= ' --batch_mode'; }
-if ($low_ram)   { $cmd2 .= ' --low_ram'; }
+  $cmd2 = escapeshellcmd(PYTHON_BIN) . ' -u ' . escapeshellarg(SCRIPTS_DIR . '/main.py') . ' '
+         . ' --input_folder ' . escapeshellarg($input_for_stitch)
+         . ' --split_height ' . escapeshellarg($split_height)
+         . ' --output_files_type ' . escapeshellarg($output_type)
+         . ' --unit_images ' . escapeshellarg($unit_images)
+         . ' --width_enforce_type ' . escapeshellarg($width_enforce)
+         . ' --custom_width ' . escapeshellarg($custom_width)
+         . ' --senstivity ' . escapeshellarg($senstivity)
+         . ' --ignorable_pixels ' . escapeshellarg($ignorable_px)
+         . ' --scan_line_step ' . escapeshellarg($scan_step);
 
-update_meta(['stage'=>'stitch','progress'=>65]);
-logln('[runner-bato] Menjalankan stitcher...');
-logln($cmd2);
+  if ($cleanup_input) { $cmd2 .= ' --cleanup-input'; }
+  if ($batch_mode)   { $cmd2 .= ' --batch_mode'; }
+  if ($low_ram)      { $cmd2 .= ' --low_ram'; }
 
-$rc2 = 0;
-$proc2 = popen($cmd2 . " 2>&1", "r");
-if ($proc2) {
-  while (!feof($proc2)) {
-    $line = fgets($proc2);
-    if ($line === false) break;
-    logln(rtrim($line));
-    $cur = intval((json_decode(@file_get_contents($meta_path), true)['progress'] ?? 65));
-    if ($cur < 95) update_meta(['progress'=>$cur+1]);
+  update_meta(['stage'=>'stitch','progress'=>65]);
+  logln('[runner-bato] Menjalankan stitcher...');
+  logln($cmd2);
+
+  $rc2 = 0;
+  $proc2 = popen($cmd2 . " 2>&1", "r");
+  if ($proc2) {
+    while (!feof($proc2)) {
+      $line = fgets($proc2);
+      if ($line === false) break;
+      logln(rtrim($line));
+      $cur = intval((json_decode(@file_get_contents($meta_path), true)['progress'] ?? 65));
+      if ($cur < 95) update_meta(['progress'=>$cur+1]);
+    }
+    $rc2 = pclose($proc2);
+  } else {
+    logln('[runner-bato] ERROR: gagal menjalankan stitcher (popen).');
+    update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed to start']);
+    exit(1);
   }
-  $rc2 = pclose($proc2);
+
+  if ($rc2 !== 0) {
+    logln("[runner-bato] ERROR: stitcher exit code $rc2");
+    update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed']);
+    exit(1);
+  }
 } else {
-  logln('[runner-bato] ERROR: gagal menjalankan stitcher (popen).');
-  update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed to start']);
-  exit(1);
+  logln('[runner-bato] Melewati proses stitch (paket unstitched saja).');
 }
 
-if ($rc2 !== 0) {
-  logln("[runner-bato] ERROR: stitcher exit code $rc2");
-  update_meta(['stage'=>'error','progress'=>100,'error'=>'Stitcher failed']);
-  exit(1);
-}
+if ($pack_to_pdf) {
+  update_meta(['stage'=>'pdf','progress'=>96]);
+  logln('[runner-bato] Mengemas hasil menjadi PDF...');
 
-update_meta(['stage'=>'zipping','progress'=>96]);
-logln('[runner-bato] Mengemas hasil menjadi ZIP...');
-
-$zip_name = "job_$job_id.zip";
-$zip_path = $out_dir . "/$zip_name";
-
-$zip = new ZipArchive();
-if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
-  $it = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($out_dir, RecursiveDirectoryIterator::SKIP_DOTS),
-    RecursiveIteratorIterator::LEAVES_ONLY
-  );
-  foreach ($it as $file) {
-    if ($file->isDir()) continue;
-    $filepath = $file->getRealPath();
-    if (basename($filepath) === $zip_name) continue;
-    $localname = substr($filepath, strlen($out_dir) + 1);
-    $zip->addFile($filepath, $localname);
+$sss = $out_dir . "/raw [Stitched]";
+$images = [];
+  if (in_array($package_content, ['raw','both'], true)) {
+    $images = array_merge($images, collect_image_files($sss));
   }
-  $zip->close();
-}
+  if ($package_content !== 'raw') {
+    $images = array_merge($images, collect_image_files($sss));
+  }
+  $images = array_values(array_unique($images));
 
-update_meta(['stage'=>'done','progress'=>100,'zip'=>basename($zip_path)]);
-logln('[runner-bato] Selesai. ZIP: ' . basename($zip_path));
+if (count($images) === 0) {
+    logln('[runner-bato] ERROR: Tidak ada gambar untuk dibuat PDF.');
+    update_meta(['stage'=>'error','progress'=>100,'error'=>'No images available for PDF']);
+    exit(1);
+  }
+
+$list_path = $job_dir . "/pdf_sources.txt";
+  file_put_contents($list_path, implode("\n", $images));
+
+  $pdf_name = "job_$job_id.pdf";
+  $pdf_path = $out_dir . "/$pdf_name";
+
+  $cmd_pdf = escapeshellcmd(PYTHON_BIN) . ' -u ' . escapeshellarg(SCRIPTS_DIR . '/make_pdf.py')
+           . ' --list ' . escapeshellarg($list_path)
+           . ' --output ' . escapeshellarg($pdf_path)
+           . ' --quality ' . escapeshellarg($pdf_quality);
+
+  logln($cmd_pdf);
+
+  $rc_pdf = 0;
+  $proc_pdf = popen($cmd_pdf . " 2>&1", "r");
+  if ($proc_pdf) {
+    while (!feof($proc_pdf)) {
+      $line = fgets($proc_pdf);
+      if ($line === false) break;
+      logln(rtrim($line));
+    }
+    $rc_pdf = pclose($proc_pdf);
+  } else {
+    logln('[runner-bato] ERROR: gagal menjalankan pembuat PDF.');
+    update_meta(['stage'=>'error','progress'=>100,'error'=>'PDF generator failed to start']);
+    exit(1);
+  }
+  if ($rc_pdf !== 0) {
+    logln("[runner-bato] ERROR: PDF generator exit code $rc_pdf");
+    update_meta(['stage'=>'error','progress'=>100,'error'=>'PDF generator failed']);
+    exit(1);
+  }
+
+  @unlink($list_path);
+  update_meta(['stage'=>'done','progress'=>100,'zip'=>basename($pdf_path),'package_type'=>'pdf']);
+  logln('[runner-bato] Selesai. PDF: ' . basename($pdf_path));
+} else {
+  update_meta(['stage'=>'zipping','progress'=>96]);
+  logln('[runner-bato] Mengemas hasil menjadi ZIP...');
+
+  $zip_name = "job_$job_id.zip";
+  $zip_path = $out_dir . "/$zip_name";
+
+  $zip = new ZipArchive();
+  if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
+    $it = new RecursiveIteratorIterator(
+      new RecursiveDirectoryIterator($out_dir, RecursiveDirectoryIterator::SKIP_DOTS),
+      RecursiveIteratorIterator::LEAVES_ONLY
+    );
+    foreach ($it as $file) {
+      if ($file->isDir()) continue;
+      $filepath = $file->getRealPath();
+      if (basename($filepath) === $zip_name) continue;
+      $localname = substr($filepath, strlen($out_dir) + 1);
+      $zip->addFile($filepath, $localname);
+    }
+    $zip->close();
+  }
+
+  update_meta(['stage'=>'done','progress'=>100,'zip'=>basename($zip_path),'package_type'=>'zip']);
+  logln('[runner-bato] Selesai. ZIP: ' . basename($zip_path));
+}

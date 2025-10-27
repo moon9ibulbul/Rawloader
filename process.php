@@ -76,7 +76,8 @@ try {
     'expires_at'=>time() + (AUTO_DELETE_MINUTES*60),
     'stage'=>'queued',
     'progress'=>1,
-    'zip'=>null
+    'zip'=>null,
+    'package_type'=>'zip'
   ];
   file_put_contents($meta_path, json_encode($meta, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));
 

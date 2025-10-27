@@ -11,14 +11,14 @@
   <div class="container">
     <header>
       <h1>Naver Webtoon Downloader</h1>
-      <p class="muted">Hanya untuk chapter gratis dan bukan smut</p>
+      <p class="muted">Hanya untuk chapter gratis dan bukan adult only. BACA WEH 😭 HANYA chapter gratis dan BUKAN adult only</p>
     </header>
 
     <section class="card">
       <form id="jobForm" onsubmit="return false;">
         <div class="grid">
           <div class="field">
-            <label>Comic ID (Naver)</label>
+            <label>Comic ID (Misal urlnya https://m.comic.naver.com/webtoon/list?titleId=717481, nah Comic IDnya tuh 717481)</label>
             <input type="number" name="comic_id" required placeholder="contoh: 183559">
           </div>
           <div class="field">
@@ -74,10 +74,10 @@
 
         <div class="grid">
           <div class="field">
-            <label>Low RAM Mode</label>
+            <label>Low RAM Mode (Set ke ON biar servernya nggak meledak)</label>
             <select name="low_ram">
               <option value="0">Off</option>
-              <option value="1">On</option>
+              <option value="1" selected>On</option>
             </select>
           </div>
           <div class="field">

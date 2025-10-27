@@ -27,9 +27,14 @@ require_once __DIR__ . '/config.php';
         <a class="btn" href="nava.php">Buka</a>
       </div>
       <div class="card">
-        <h2>NewToki</h2>
-        <p>Masukkan URL penuh laman episode NewToki, otomatis scrape semua gambar.</p>
+        <h2>XToon (Alternatif NewToki)</h2>
+        <p>Masukkan URL penuh laman episode XToon, otomatis scrape semua gambar.</p>
         <a class="btn" href="toki.php">Buka</a>
+      </div>
+      <div class="card">
+        <h2>Bato.to</h2>
+        <p>Masukkan URL penuh laman chapter batoto, otomatis scrape semua gambar.</p>
+        <a class="btn" href="bato.php">Buka</a>
       </div>
     </div>
   </div>

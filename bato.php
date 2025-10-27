@@ -4,20 +4,20 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Bato v2 Downloader + Smart Stitch</title>
+  <title>Bato Downloader + Smart Stitch</title>
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
   <div class="container">
     <header>
       <h1>Bato Downloader</h1>
-      <p class="muted">Scraper + SmartStitch untuk sumber Bato v2</p>
+      <p class="muted">Scraper + SmartStitch untuk sumber Bato</p>
     </header>
 
     <section class="card">
       <form id="jobForm" onsubmit="return false;">
         <div class="field">
-          <label>URL Sumber (Pakai bato v2 ya guys, jangan bato.si atau bato.ing. Jangan pakai bato v3 juga buset 😭)</label>
+          <label>URL Sumber (Bato v2/v3/v4)</label>
           <input type="url" name="source_url" required placeholder="e.g. https://bato.to/chapter/3841340">
         </div>
 
@@ -82,8 +82,31 @@
             </select>
           </div>
           <div class="field">
-            <label>Unit Images (Kalau stuck, ubah jadi 10 atau terserahlah yang penting kurang dari 20 🫠)</label>
-            <input type="number" name="unit_images" value="20" min="2" max="50">
+            <label>Unit Images (Kalau stuck, ubah jadi 10 atau terserahlah yang penting kurang dari 15 🫠)</label>
+            <input type="number" name="unit_images" value="15" min="2" max="50">
+          </div>
+        </div>
+
+<div class="grid">
+          <div class="field">
+            <label>Isi Paket Unduhan</label>
+            <select name="package_content">
+              <option value="stitched">Hanya hasil stitched</option>
+              <option value="raw">Hanya hasil unstitched</option>
+              <option value="both">Stitched + unstitched</option>
+            </select>
+          </div>
+          <div class="field">
+            <label style="display:block">&nbsp;</label>
+            <label class="checkbox-label"><input type="checkbox" id="packToPdf" name="pack_to_pdf" value="1"> Kemas jadi PDF</label>
+          </div>
+          <div class="field hidden" id="pdfQualityField">
+            <label>Kualitas PDF</label>
+            <select name="pdf_quality">
+              <option value="high">Tinggi (asli)</option>
+              <option value="medium">Sedang</option>
+              <option value="low">Rendah</option>
+            </select>
           </div>
         </div>
 
@@ -200,7 +223,16 @@
           const box = $("#downloadBox");
           if (box) box.classList.remove('hidden');
           const link = $("#downloadLink");
-          if (link) link.href = data.zip_url;
+          if (link) {
+            link.href = data.zip_url;
+            if (data.download_label) {
+              link.textContent = data.download_label;
+            } else if (data.package_type === 'pdf') {
+              link.textContent = 'Unduh PDF';
+            } else {
+              link.textContent = 'Unduh ZIP';
+            }
+          }
           const expiry = $("#expiryNote");
           if (expiry) expiry.textContent = `File akan dihapus otomatis pada ${data.expires_at_local}.`;
         }
@@ -213,6 +245,20 @@
     document.addEventListener('DOMContentLoaded', () => {
       const btn = $("#startBtn");
       if (btn) btn.addEventListener('click', startJob);
+      const pdfToggle = $("#packToPdf");
+      const pdfField = $("#pdfQualityField");
+      const refreshPdfField = () => {
+        if (!pdfField) return;
+        if (pdfToggle && pdfToggle.checked) {
+          pdfField.classList.remove('hidden');
+        } else {
+          pdfField.classList.add('hidden');
+        }
+      };
+      if (pdfToggle) {
+        pdfToggle.addEventListener('change', refreshPdfField);
+        refreshPdfField();
+      }
     });
   </script>
 </body>
