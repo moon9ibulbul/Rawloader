@@ -16,8 +16,10 @@ import gzip
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zlib
 from dataclasses import dataclass
@@ -65,6 +67,10 @@ SESSION_SEED_URL = "https://www.mangago.me/"
 _COOKIE_JAR = CookieJar()
 _OPENER = build_opener(ProxyHandler({}), HTTPCookieProcessor(_COOKIE_JAR))
 _SESSION_WARMED = False
+
+_USE_CURL = False
+_CURL_AVAILABLE = shutil.which("curl") is not None
+_CURL_COOKIE_JAR_PATH: Optional[str] = None
 
 
 def _normalize_host(host: str) -> str:
@@ -118,6 +124,79 @@ def _build_request_headers(url: str, referer: Optional[str], resource: str) -> d
     return headers
 
 
+def _ensure_curl_cookie_jar() -> str:
+    global _CURL_COOKIE_JAR_PATH
+    if _CURL_COOKIE_JAR_PATH and os.path.exists(_CURL_COOKIE_JAR_PATH):
+        return _CURL_COOKIE_JAR_PATH
+    fd, path = tempfile.mkstemp(prefix="mangago_cookies_", suffix=".txt")
+    os.close(fd)
+    _CURL_COOKIE_JAR_PATH = path
+    return path
+
+
+def _curl_http_get(
+    url: str,
+    *,
+    referer: Optional[str] = None,
+    resource: str = "document",
+) -> bytes:
+    if not _CURL_AVAILABLE:
+        raise DownloadError("curl fallback tidak tersedia di lingkungan ini")
+
+    cookie_path = _ensure_curl_cookie_jar()
+    headers = _build_request_headers(url, referer, resource)
+    headers.pop("User-Agent", None)
+
+    cmd = [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--compressed",
+        "--cookie",
+        cookie_path,
+        "--cookie-jar",
+        cookie_path,
+        "--connect-timeout",
+        "15",
+        "--max-time",
+        "60",
+        "-A",
+        USER_AGENT,
+    ]
+
+    for key, value in headers.items():
+        cmd.extend(["-H", f"{key}: {value}"])
+
+    cmd.extend(["-w", "\nCURLSTATUS:%{http_code}\n", url])
+
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", errors="replace")
+        raise DownloadError(f"curl gagal untuk {url}: {stderr.strip()}")
+
+    stdout = proc.stdout
+    marker = b"\nCURLSTATUS:"
+    if marker not in stdout:
+        raise DownloadError("curl response tidak mengandung status HTTP")
+
+    body, status_part = stdout.rsplit(marker, 1)
+    status_line = status_part.strip().split(b"\n", 1)[0]
+    try:
+        status_code = int(status_line)
+    except ValueError:
+        raise DownloadError("Gagal membaca status HTTP dari curl")
+
+    if status_code >= 400:
+        raise DownloadError(f"HTTP {status_code} saat mengakses {url}")
+
+    return body
+
+
 @dataclass
 class ChapterContext:
     chapter_url: str
@@ -133,6 +212,8 @@ class DownloadError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 def warm_session() -> None:
+    if _USE_CURL:
+        return
     global _SESSION_WARMED
     if _SESSION_WARMED:
         return
@@ -169,6 +250,10 @@ def http_get(
     resource: str = "document",
     _retry: bool = False,
 ) -> bytes:
+    global _USE_CURL
+    if _USE_CURL:
+        return _curl_http_get(url, referer=referer, resource=resource)
+
     warm_session()
     headers = _build_request_headers(url, referer, resource)
     req = Request(url, headers=headers)
@@ -191,8 +276,14 @@ def http_get(
             warm_session()
             time.sleep(0.5)
             return http_get(url, referer=referer, resource=resource, _retry=True)
+        if exc.code in {403, 503} and _CURL_AVAILABLE:
+            _USE_CURL = True
+            return _curl_http_get(url, referer=referer, resource=resource)
         raise DownloadError(f"HTTP {exc.code} saat mengakses {url}") from exc
     except URLError as exc:  # pragma: no cover - network failure
+        if not _retry and _CURL_AVAILABLE:
+            _USE_CURL = True
+            return _curl_http_get(url, referer=referer, resource=resource)
         raise DownloadError(f"Koneksi gagal ke {url}: {exc.reason}") from exc
     return data
 
