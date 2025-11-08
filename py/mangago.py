@@ -226,7 +226,7 @@ def string_unscramble(scrambled: str, keys: Iterable[int]) -> str:
     chars = list(scrambled)
     keys_list = list(keys)
     for key_val in reversed(keys_list):
-        for i in range(len(chars), key_val, -1):
+        for i in range(len(chars) - 1, key_val, -1):
             if (i - 1) % 2 != 0:
                 idx1 = i - key_val - 1
                 idx2 = i - 1
@@ -238,7 +238,7 @@ def string_unscramble(scrambled: str, keys: Iterable[int]) -> str:
 def unscramble_image_list(image_list: str, deobfuscated_js: str) -> str:
     key_locations: List[int] = []
     for match in re.finditer(r"str\\.charAt\\s*\\(\\s*(\\d+)\\s*\\)", deobfuscated_js):
-        key_locations.append(int(match.group(1)) + 1)
+        key_locations.append(int(match.group(1)))
 
     # Preserve order but keep them unique
     seen = set()
@@ -253,9 +253,9 @@ def unscramble_image_list(image_list: str, deobfuscated_js: str) -> str:
 
     key_digits: List[int] = []
     for loc in unique_locations:
-        if loc <= 0 or loc > len(image_list):
+        if loc < 0 or loc >= len(image_list):
             return image_list
-        digit = image_list[loc - 1]
+        digit = image_list[loc]
         if not digit.isdigit():
             return image_list
         key_digits.append(int(digit))
@@ -263,7 +263,7 @@ def unscramble_image_list(image_list: str, deobfuscated_js: str) -> str:
     # Remove the digits used for the key from the original list
     remove_set = set(unique_locations)
     cleaned_chars: List[str] = [
-        ch for idx, ch in enumerate(image_list, start=1) if idx not in remove_set
+        ch for idx, ch in enumerate(image_list) if idx not in remove_set
     ]
     cleaned_list = "".join(cleaned_chars)
     return string_unscramble(cleaned_list, key_digits)
