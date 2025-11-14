@@ -64,6 +64,9 @@ DEFAULT_HEADERS = {
 
 SESSION_SEED_URL = "https://www.mangago.me/"
 
+STATIC_AES_KEY = "e11adc3949ba59abbe56e057f20f883e"
+STATIC_AES_IV = "1234567890abcdef1234567890abcdef"
+
 _COOKIE_JAR = CookieJar()
 _OPENER = build_opener(ProxyHandler({}), HTTPCookieProcessor(_COOKIE_JAR))
 _SESSION_WARMED = False
@@ -394,6 +397,16 @@ def aes_cbc_decrypt_zero_padding(data_b64: str, key_hex: str, iv_hex: str) -> st
     return plaintext.decode("utf-8", errors="replace")
 
 
+def decrypt_with_static_key(data_b64: str) -> Optional[str]:
+    data_b64 = data_b64.strip()
+    if not data_b64:
+        return None
+    try:
+        return aes_cbc_decrypt_zero_padding(data_b64, STATIC_AES_KEY, STATIC_AES_IV)
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Descrambler helpers
 # ---------------------------------------------------------------------------
@@ -454,10 +467,20 @@ def descramble_image(data: bytes, desckey: str, cols: int) -> bytes:
 # ---------------------------------------------------------------------------
 
 def extract_image_manifest(html: str, chapter_url: str) -> tuple[List[str], int, str]:
-    imgsrc_match = re.search(r"var\\s+imgsrcs\\s*=\\s*'([^']+)'", html)
+    imgsrc_match = re.search(r"var\\s+imgsrcs\\s*=\\s*['\"]([^'\"]+)['\"]", html)
     if not imgsrc_match:
         raise DownloadError("Tidak menemukan imgsrcs pada halaman chapter")
     imgsrc_b64 = imgsrc_match.group(1)
+
+    static_plain = decrypt_with_static_key(imgsrc_b64)
+    if static_plain:
+        image_urls = [
+            urljoin(chapter_url, part.strip())
+            for part in static_plain.split(',')
+            if part.strip()
+        ]
+        if image_urls:
+            return image_urls, 0, ""
 
     script_match = re.search(r"<script[^>]+src=\"([^\"]*chapter\\.js[^\"]*)\"", html)
     if not script_match:
